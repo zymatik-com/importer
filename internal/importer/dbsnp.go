@@ -21,7 +21,6 @@ package importer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,7 +28,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/FastFilter/xorfilter"
 	"github.com/brentp/vcfgo"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/zymatik-com/genobase"
@@ -77,13 +75,13 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 		return fmt.Errorf("could not open dbSNP file: %w", err)
 	}
 
-	var knownFilter *xorfilter.BinaryFuse8
+	var knownAlleles map[int64]bool
 	if knownOnly {
-		logger.Info("Constructing known alleles filter (this may take a while)")
+		logger.Info("Getting known alleles (this may take a while)")
 
-		knownFilter, err = db.KnownAlleles(ctx)
+		knownAlleles, err = db.KnownAlleles(ctx)
 		if err != nil {
-			return fmt.Errorf("could not construct known alleles filter: %w", err)
+			return fmt.Errorf("could not get known alleles: %w", err)
 		}
 	}
 
@@ -124,7 +122,9 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 
 		variantClass, err := variant.Info().Get("VC")
 		if err != nil {
-			return fmt.Errorf("could not get variant class: %w", err)
+			logger.Warn("Could not get variant class", "error", err)
+
+			continue
 		}
 
 		// Do not store multi-nucleotide variants.
@@ -136,7 +136,9 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 		if commonOnly {
 			common, err := variant.Info().Get("COMMON")
 			if err != nil {
-				return fmt.Errorf("could not get variant commonness: %w", err)
+				logger.Warn("Could not get variant commonness", "error", err)
+
+				continue
 			}
 			if !common.(bool) {
 				continue
@@ -145,25 +147,14 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 
 		id, err := strconv.ParseInt(strings.TrimPrefix(variant.Id(), "rs"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("could not parse variant id: %w", err)
+			logger.Warn("Could not parse variant ID", "id", variant.Id(), "error", err)
+
+			continue
 		}
 
 		if knownOnly {
-			reference := variant.Ref()
-			alternate := variant.Alt()[0]
-
-			if !knownFilter.Contains(uint64(id)) {
+			if _, ok := knownAlleles[id]; !ok {
 				continue
-			}
-
-			// The filter is probabilistic, so we need to double check that the allele is actually known.
-			// This is still way faster than doing a full lookup for every variant.
-			if _, err := db.GetAllele(ctx, id, reference, alternate, types.AncestryGroupAll); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					continue
-				}
-
-				return fmt.Errorf("could not get allele: %w", err)
 			}
 		}
 
@@ -194,7 +185,6 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 			ID:         id,
 			Chromosome: chromosome,
 			Position:   int64(variant.Pos),
-			Reference:  variant.Ref(),
 			Class:      types.VariantClass(variantClass.(string)),
 		})
 
