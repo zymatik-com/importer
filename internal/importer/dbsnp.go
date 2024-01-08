@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/FastFilter/xorfilter"
 	"github.com/brentp/vcfgo"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/zymatik-com/genobase"
@@ -104,6 +105,14 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 		return fmt.Errorf("could not create vcf reader: %w", err)
 	}
 
+	var knownFilter *xorfilter.BinaryFuse8
+	if knownOnly {
+		knownFilter, err = db.KnownAlleles(ctx)
+		if err != nil {
+			return fmt.Errorf("could not construct known alleles filter: %w", err)
+		}
+	}
+
 	variants := make([]types.Variant, 0, batchSize)
 	for {
 		variant := vcfReader.Read()
@@ -141,6 +150,12 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 			reference := variant.Ref()
 			alternate := variant.Alt()[0]
 
+			if !knownFilter.Contains(uint64(id)) {
+				continue
+			}
+
+			// The filter is probabilistic, so we need to double check that the allele is actually known.
+			// This is still way faster than doing a full lookup for every variant.
 			if _, err := db.GetAllele(ctx, id, reference, alternate, types.AncestryGroupAll); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					continue

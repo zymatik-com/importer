@@ -3,10 +3,11 @@ module github.com/zymatik-com/importer
 go 1.21.5
 
 require (
+	github.com/FastFilter/xorfilter v0.1.4
 	github.com/brentp/vcfgo v0.0.0-20221128230736-759c0d32541e
 	github.com/cheggaaa/pb/v3 v3.1.4
 	github.com/urfave/cli/v2 v2.27.0
-	github.com/zymatik-com/genobase v0.2.2
+	github.com/zymatik-com/genobase v0.3.0
 	github.com/zymatik-com/nucleo v0.1.2
 )
 
