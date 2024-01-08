@@ -77,6 +77,16 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 		return fmt.Errorf("could not open dbSNP file: %w", err)
 	}
 
+	var knownFilter *xorfilter.BinaryFuse8
+	if knownOnly {
+		logger.Info("Constructing known alleles filter (this may take a while)")
+
+		knownFilter, err = db.KnownAlleles(ctx)
+		if err != nil {
+			return fmt.Errorf("could not construct known alleles filter: %w", err)
+		}
+	}
+
 	var dr io.ReadCloser
 	if showProgress {
 		fi, err := f.Stat()
@@ -103,14 +113,6 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 	vcfReader, err := vcfgo.NewReader(dr, false)
 	if err != nil {
 		return fmt.Errorf("could not create vcf reader: %w", err)
-	}
-
-	var knownFilter *xorfilter.BinaryFuse8
-	if knownOnly {
-		knownFilter, err = db.KnownAlleles(ctx)
-		if err != nil {
-			return fmt.Errorf("could not construct known alleles filter: %w", err)
-		}
 	}
 
 	variants := make([]types.Variant, 0, batchSize)
