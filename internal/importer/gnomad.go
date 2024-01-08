@@ -36,6 +36,7 @@ import (
 	"github.com/zymatik-com/nucleo/names"
 )
 
+// Ancestry groups which we store allele frequencies for.
 var ancestryGroups = []types.AncestryGroup{
 	types.AncestryGroupAll,
 	types.AncestryGroupAfrican,
@@ -49,6 +50,9 @@ var ancestryGroups = []types.AncestryGroup{
 	types.AncestryGroupSouthAsian,
 }
 
+// Mitochondrial ancestry groups which gnoMAD has allele frequencies for.
+// The order of these groups is important as it matches the order of the
+// population frequencies in the gnoMAD VCFs.
 var mtDNAAncestryGroups = []types.AncestryGroup{
 	types.AncestryGroupAfrican,
 	types.AncestryGroupAmish,
@@ -266,7 +270,12 @@ func GnoMAD(ctx context.Context, logger *slog.Logger, db *genobase.DB, gnoMADPat
 			}
 
 			for _, ancestry := range ancestryGroups {
-				frequency := populationFrequencies[ancestry]
+				var frequency float64
+				if ancestry == types.AncestryGroupAll {
+					frequency = overallFrequency
+				} else {
+					frequency = populationFrequencies[ancestry]
+				}
 
 				// Conserve space by rounding ancestry group frequencies down to zero where appropriate.
 				if frequency > minumumFrequency/100.0 {
