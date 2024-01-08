@@ -21,6 +21,7 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -69,7 +70,7 @@ var idToChromosome = map[string]string{
 }
 
 // DBSNP imports dbSNP data into the genobase.
-func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath string, showProgress bool) error {
+func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath string, commonOnly, knownOnly, showProgress bool) error {
 	f, err := os.Open(dbSNPPath)
 	if err != nil {
 		return fmt.Errorf("could not open dbSNP file: %w", err)
@@ -110,16 +111,6 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 			break
 		}
 
-		// Only store "common" variants for now.
-		// TODO: use our own allele frequency data if available.
-		common, err := variant.Info().Get("COMMON")
-		if err != nil {
-			return fmt.Errorf("could not get variant commonness: %w", err)
-		}
-		if !common.(bool) {
-			continue
-		}
-
 		variantClass, err := variant.Info().Get("VC")
 		if err != nil {
 			return fmt.Errorf("could not get variant class: %w", err)
@@ -130,9 +121,33 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath 
 			continue
 		}
 
+		// Only store common variants.
+		if commonOnly {
+			common, err := variant.Info().Get("COMMON")
+			if err != nil {
+				return fmt.Errorf("could not get variant commonness: %w", err)
+			}
+			if !common.(bool) {
+				continue
+			}
+		}
+
 		id, err := strconv.ParseInt(strings.TrimPrefix(variant.Id(), "rs"), 10, 64)
 		if err != nil {
 			return fmt.Errorf("could not parse variant id: %w", err)
+		}
+
+		if knownOnly {
+			reference := variant.Ref()
+			alternate := variant.Alt()[0]
+
+			if _, err := db.GetAllele(ctx, id, reference, alternate, types.AncestryGroupAll); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+
+				return fmt.Errorf("could not get allele: %w", err)
+			}
 		}
 
 		chromosome, ok := idToChromosome[variant.Chromosome]

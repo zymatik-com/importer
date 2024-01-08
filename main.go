@@ -58,10 +58,9 @@ func main() {
 			Value:   true,
 		},
 		&cli.StringFlag{
-			Name:    "database-path",
-			Aliases: []string{"db"},
-			Usage:   "Set the Genobase DB path",
-			Value:   "genobase.db",
+			Name:  "db",
+			Usage: "Set the Genobase DB path",
+			Value: "genobase.db",
 		},
 		&cli.BoolFlag{
 			Name:  "no-sync",
@@ -79,15 +78,26 @@ func main() {
 			{
 				Name:      "variants",
 				Usage:     "Import dbSNP variants into a Genobase DB",
-				UsageText: "importer add-variants <dbsnp vcf path>",
-				Flags:     sharedFlags,
-				Before:    init,
+				UsageText: "importer variants [--common | --known] <dbsnp vcf path>",
+				Flags: append([]cli.Flag{
+					&cli.BoolFlag{
+						Name:  "common",
+						Usage: "Only import common variants",
+						Value: false,
+					},
+					&cli.BoolFlag{
+						Name:  "known",
+						Usage: "Only import variants we have allele frequencies for",
+						Value: false,
+					},
+				}, sharedFlags...),
+				Before: init,
 				Action: func(c *cli.Context) error {
 					if c.NArg() != 1 {
 						return fmt.Errorf("missing required dbsnp path argument")
 					}
 
-					dbPath := c.String("database-path")
+					dbPath := c.String("db")
 					noSync := c.Bool("no-sync")
 
 					db, err := genobase.Open(c.Context, logger, dbPath, noSync)
@@ -100,13 +110,16 @@ func main() {
 
 					logger.Info("Adding dbSNP variants", "path", dbsnpPath)
 
-					return importer.DBSNP(c.Context, logger, db, dbsnpPath, showProgress)
+					commonOnly := c.Bool("common")
+					knownOnly := c.Bool("known")
+
+					return importer.DBSNP(c.Context, logger, db, dbsnpPath, commonOnly, knownOnly, showProgress)
 				},
 			},
 			{
 				Name:      "alleles",
 				Usage:     "Import gnomAD allele frequencies into a Genobase DB",
-				UsageText: "importer alleles <gnomad vcf path>",
+				UsageText: "importer alleles [-m frequency] <gnomad vcf path>",
 				Flags: append([]cli.Flag{
 					&cli.Float64Flag{
 						Name:    "minimum-frequency",
@@ -121,7 +134,7 @@ func main() {
 						return fmt.Errorf("missing required gnomad path argument")
 					}
 
-					dbPath := c.String("database-path")
+					dbPath := c.String("db")
 					noSync := c.Bool("no-sync")
 
 					db, err := genobase.Open(c.Context, logger, dbPath, noSync)
@@ -140,13 +153,13 @@ func main() {
 			},
 			{
 				Name:      "chain-file",
-				Usage:     "Import a chain file into a Genobase DB",
-				UsageText: "importer add-chain-file [-f reference] <chain file path>",
+				Usage:     "Import liftOver chain file into a Genobase DB",
+				UsageText: "importer chain-file <-f reference> <chain file path>",
 				Flags: append([]cli.Flag{
 					&cli.StringFlag{
-						Name:     "from-reference",
+						Name:     "from",
 						Aliases:  []string{"f"},
-						Usage:    "The reference this chain is from",
+						Usage:    "The reference this chain is from (eg. GRCh37)",
 						Required: true,
 					},
 				}, sharedFlags...),
@@ -156,7 +169,7 @@ func main() {
 						return fmt.Errorf("missing required chain file path argument")
 					}
 
-					dbPath := c.String("database-path")
+					dbPath := c.String("db")
 					noSync := c.Bool("no-sync")
 
 					db, err := genobase.Open(c.Context, logger, dbPath, noSync)
@@ -165,7 +178,7 @@ func main() {
 					}
 					defer db.Close()
 
-					from, err := names.Reference(c.String("from-reference"))
+					from, err := names.Reference(c.String("from"))
 					if err != nil {
 						return fmt.Errorf("invalid from reference: %w", err)
 					}
