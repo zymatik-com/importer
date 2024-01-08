@@ -30,25 +30,40 @@ import (
 
 	"github.com/brentp/vcfgo"
 	"github.com/cheggaaa/pb/v3"
-	"github.com/zymatik-com/tools/compress"
-	"github.com/zymatik-com/tools/database"
+	"github.com/zymatik-com/genobase"
+	"github.com/zymatik-com/genobase/types"
+	"github.com/zymatik-com/nucleo/compress"
+	"github.com/zymatik-com/nucleo/names"
 )
 
-var ancestryGroups = []database.AncestryGroup{
-	database.AncestryGroupAll,
-	database.AncestryGroupAfrican,
-	database.AncestryGroupAmish,
-	database.AncestryGroupAmerican,
-	database.AncestryGroupAshkenazi,
-	database.AncestryGroupEastAsian,
-	database.AncestryGroupFinnish,
-	database.AncestryGroupMiddleEastern,
-	database.AncestryGroupEuropean,
-	database.AncestryGroupSouthAsian,
+var ancestryGroups = []types.AncestryGroup{
+	types.AncestryGroupAll,
+	types.AncestryGroupAfrican,
+	types.AncestryGroupAmish,
+	types.AncestryGroupAmerican,
+	types.AncestryGroupAshkenazi,
+	types.AncestryGroupEastAsian,
+	types.AncestryGroupFinnish,
+	types.AncestryGroupMiddleEastern,
+	types.AncestryGroupEuropean,
+	types.AncestryGroupSouthAsian,
 }
 
-// GnoMAD imports gnoMAD allele frequency data into the database.
-func GnoMAD(ctx context.Context, logger *slog.Logger, db *database.DB, gnoMADPath string, minumumFrequency float64, showProgress bool) error {
+var mtDNAAncestryGroups = []types.AncestryGroup{
+	types.AncestryGroupAfrican,
+	types.AncestryGroupAmish,
+	types.AncestryGroupAmerican,
+	types.AncestryGroupAshkenazi,
+	types.AncestryGroupEastAsian,
+	types.AncestryGroupFinnish,
+	types.AncestryGroupEuropean,
+	types.AncestryGroupOther,
+	types.AncestryGroupSouthAsian,
+	types.AncestryGroupMiddleEastern,
+}
+
+// GnoMAD imports gnoMAD allele frequency data into the genobase.
+func GnoMAD(ctx context.Context, logger *slog.Logger, db *genobase.DB, gnoMADPath string, minumumFrequency float64, showProgress bool) error {
 	f, err := os.Open(gnoMADPath)
 	if err != nil {
 		return err
@@ -83,7 +98,7 @@ func GnoMAD(ctx context.Context, logger *slog.Logger, db *database.DB, gnoMADPat
 		return fmt.Errorf("could not create vcf reader: %w", err)
 	}
 
-	var alleles []database.Allele
+	var alleles []types.Allele
 	for {
 		variant := vcfReader.Read()
 		if variant == nil {
@@ -120,60 +135,150 @@ func GnoMAD(ctx context.Context, logger *slog.Logger, db *database.DB, gnoMADPat
 
 		info := variant.Info()
 
-		overallFrequency, err := info.Get("AF")
-		if err != nil {
-			logger.Warn("Could not get variant frequency", "error", err)
-			continue
-		}
-
-		// Not concerned with very rare variants.
-		if float64(overallFrequency.([]float32)[0]) < minumumFrequency {
-			continue
-		}
-
-		variantType, err := info.Get("allele_type")
-		if err != nil {
-			logger.Warn("Could not get variant type", "error", err)
-			continue
-		}
-
-		// Only concerned with SNVs, and INDELs.
-		if strings.ToUpper(variantType.(string)) != "SNV" &&
-			strings.ToUpper(variantType.(string)) != "INS" &&
-			strings.ToUpper(variantType.(string)) != "DEL" {
-			continue
-		}
-
-		// Only concerned with biallelic variants.
-		if len(variant.Alt()) != 1 {
-			continue
-		}
-
-		for _, ancestry := range ancestryGroups {
-			var frequency float64
-			if ancestry == database.AncestryGroupAll {
-				frequency = float64(overallFrequency.([]float32)[0])
-			} else {
-				key := fmt.Sprintf("AF_%s", strings.ToLower(string(ancestry)))
-
-				populationFrequency, err := info.Get(key)
-				if err != nil {
-					continue
-				} else {
-					frequency = float64(populationFrequency.([]float32)[0])
-				}
+		if names.Chromosome(variant.Chromosome) != "MT" {
+			overallFrequency, err := info.Get("AF")
+			if err != nil {
+				logger.Warn("Could not get variant frequency", "error", err)
+				continue
 			}
 
-			// Conserve space by rounding ancestry group frequencies down to zero where appropriate.
-			if frequency > minumumFrequency/100.0 {
-				for _, id := range ids {
-					alleles = append(alleles, database.Allele{
-						ID:        id,
-						Reference: variant.Ref(),
-						Alternate: variant.Alt()[0],
-						Ancestry:  ancestry,
-						Frequency: frequency,
-					})
+			// Not concerned with very rare variants.
+			if float64(overallFrequency.([]float32)[0]) < minumumFrequency {
+				continue
+			}
+
+			variantType, err := info.Get("allele_type")
+			if err != nil {
+				logger.Warn("Could not get variant type", "error", err)
+				continue
+			}
+
+			// Only concerned with SNVs, and INDELs.
+			if strings.ToUpper(variantType.(string)) != "SNV" &&
+				strings.ToUpper(variantType.(string)) != "INS" &&
+				strings.ToUpper(variantType.(string)) != "DEL" {
+				continue
+			}
+
+			if len(variant.Alt()) != 1 {
+				continue
+			}
+
+			for _, ancestry := range ancestryGroups {
+				var frequency float64
+				if ancestry == types.AncestryGroupAll {
+					frequency = float64(overallFrequency.([]float32)[0])
+				} else {
+					key := fmt.Sprintf("AF_%s", strings.ToLower(string(ancestry)))
+
+					populationFrequency, err := info.Get(key)
+					if err != nil {
+						continue
+					} else {
+						frequency = float64(populationFrequency.([]float32)[0])
+					}
+				}
+
+				// Conserve space by rounding ancestry group frequencies down to zero where appropriate.
+				if frequency > minumumFrequency/100.0 {
+					for _, id := range ids {
+						alleles = append(alleles, types.Allele{
+							ID:        id,
+							Reference: variant.Ref(),
+							Alternate: variant.Alt()[0],
+							Ancestry:  ancestry,
+							Frequency: frequency,
+						})
+					}
+				}
+			}
+		} else {
+			// gnoMADv3 mitochondrial variants are in a totally different format (╯°□°）╯︵ ┻━┻.
+			hetFrequency, err := info.Get("AF_het")
+			if err != nil {
+				logger.Warn("Could not get variant frequency", "error", err)
+				continue
+			}
+
+			homFrequency, err := info.Get("AF_hom")
+			if err != nil {
+				logger.Warn("Could not get variant frequency", "error", err)
+				continue
+			}
+
+			overallFrequency := hetFrequency.(float64) + homFrequency.(float64)
+
+			// Not concerned with very rare variants.
+			if overallFrequency < minumumFrequency {
+				continue
+			}
+
+			// Bit of a horrible hack using the vep field to get the variant type here.
+			vep, err := info.Get("vep")
+			if err != nil {
+				logger.Warn("Could not get variant type", "error", err)
+
+				continue
+			}
+
+			// Only concerned with SNVs, and INDELs.
+			if !strings.Contains(vep.(string), "insertion") &&
+				!strings.Contains(vep.(string), "deletion") &&
+				!strings.Contains(vep.(string), "SNV") {
+				continue
+			}
+
+			if len(variant.Alt()) != 1 {
+				continue
+			}
+
+			populationHetFrequencies, err := info.Get("pop_AF_het")
+			if err != nil {
+				logger.Warn("Could not get het variant frequency", "error", err)
+				continue
+			}
+
+			populationHomFrequencies, err := info.Get("pop_AF_hom")
+			if err != nil {
+				logger.Warn("Could not get hom variant frequency", "error", err)
+				continue
+			}
+
+			populationFrequencies := make(map[types.AncestryGroup]float64)
+			for i, populationHetFrequencyStr := range strings.Split(populationHetFrequencies.(string), "|") {
+				populationHetFrequency, err := strconv.ParseFloat(populationHetFrequencyStr, 64)
+				if err != nil {
+					logger.Warn("Could not parse variant frequency", "error", err)
+					continue
+				}
+
+				populationFrequencies[mtDNAAncestryGroups[i]] += populationHetFrequency
+			}
+
+			for i, populationHomFrequencyStr := range strings.Split(populationHomFrequencies.(string), "|") {
+				populationHomFrequency, err := strconv.ParseFloat(populationHomFrequencyStr, 64)
+				if err != nil {
+					logger.Warn("Could not parse variant frequency", "error", err)
+					continue
+				}
+
+				populationFrequencies[mtDNAAncestryGroups[i]] += populationHomFrequency
+			}
+
+			for _, ancestry := range ancestryGroups {
+				frequency := populationFrequencies[ancestry]
+
+				// Conserve space by rounding ancestry group frequencies down to zero where appropriate.
+				if frequency > minumumFrequency/100.0 {
+					for _, id := range ids {
+						alleles = append(alleles, types.Allele{
+							ID:        id,
+							Reference: variant.Ref(),
+							Alternate: variant.Alt()[0],
+							Ancestry:  ancestry,
+							Frequency: frequency,
+						})
+					}
 				}
 			}
 		}

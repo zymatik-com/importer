@@ -20,5 +20,5 @@
 # Go workspace file
 go.work
 
-# SQLite database files
+# Genobase database files
 *.db

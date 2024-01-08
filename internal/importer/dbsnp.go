@@ -30,8 +30,9 @@ import (
 
 	"github.com/brentp/vcfgo"
 	"github.com/cheggaaa/pb/v3"
-	"github.com/zymatik-com/tools/compress"
-	"github.com/zymatik-com/tools/database"
+	"github.com/zymatik-com/genobase"
+	"github.com/zymatik-com/genobase/types"
+	"github.com/zymatik-com/nucleo/compress"
 )
 
 const (
@@ -67,8 +68,8 @@ var idToChromosome = map[string]string{
 	"NC_012920.1":  "MT",
 }
 
-// DBSNP imports dbSNP data into the database.
-func DBSNP(ctx context.Context, logger *slog.Logger, db *database.DB, dbSNPPath string, showProgress bool) error {
+// DBSNP imports dbSNP data into the genobase.
+func DBSNP(ctx context.Context, logger *slog.Logger, db *genobase.DB, dbSNPPath string, showProgress bool) error {
 	f, err := os.Open(dbSNPPath)
 	if err != nil {
 		return fmt.Errorf("could not open dbSNP file: %w", err)
@@ -102,7 +103,7 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *database.DB, dbSNPPath 
 		return fmt.Errorf("could not create vcf reader: %w", err)
 	}
 
-	variants := make([]database.Variant, 0, batchSize)
+	variants := make([]types.Variant, 0, batchSize)
 	for {
 		variant := vcfReader.Read()
 		if variant == nil {
@@ -157,12 +158,12 @@ func DBSNP(ctx context.Context, logger *slog.Logger, db *database.DB, dbSNPPath 
 			chromosome = "PAR2"
 		}
 
-		variants = append(variants, database.Variant{
+		variants = append(variants, types.Variant{
 			ID:         id,
 			Chromosome: chromosome,
 			Position:   int64(variant.Pos),
 			Reference:  variant.Ref(),
-			Class:      database.VariantClass(variantClass.(string)),
+			Class:      types.VariantClass(variantClass.(string)),
 		})
 
 		if len(variants) >= batchSize {

@@ -25,14 +25,15 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/zymatik-com/tools/compress"
-	"github.com/zymatik-com/tools/database"
-	"github.com/zymatik-com/tools/liftover"
-	"github.com/zymatik-com/tools/liftover/chainfile"
+	"github.com/zymatik-com/genobase"
+	"github.com/zymatik-com/genobase/types"
+	"github.com/zymatik-com/nucleo/compress"
+	"github.com/zymatik-com/nucleo/liftover"
+	"github.com/zymatik-com/nucleo/liftover/chainfile"
 )
 
-// LiftOverChain imports a lift over chain file into the database.
-func LiftOverChain(ctx context.Context, logger *slog.Logger, db *database.DB, fromReference, path string, showProgress bool) error {
+// LiftOverChain imports a lift over chain file into the genobase.
+func LiftOverChain(ctx context.Context, logger *slog.Logger, db *genobase.DB, from types.Reference, path string, showProgress bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("could not open chain file: %w", err)
@@ -54,7 +55,7 @@ func LiftOverChain(ctx context.Context, logger *slog.Logger, db *database.DB, fr
 		return fmt.Errorf("could not close chain file: %w", err)
 	}
 
-	if err := liftover.StoreChainFile(ctx, db, fromReference, cf, showProgress); err != nil {
+	if err := liftover.StoreChainFile(ctx, db, from, cf, showProgress); err != nil {
 		return err
 	}
 

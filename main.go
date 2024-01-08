@@ -25,8 +25,9 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v2"
+	"github.com/zymatik-com/genobase"
 	"github.com/zymatik-com/importer/internal/importer"
-	"github.com/zymatik-com/tools/database"
+	"github.com/zymatik-com/nucleo/names"
 )
 
 func main() {
@@ -59,8 +60,8 @@ func main() {
 		&cli.StringFlag{
 			Name:    "database-path",
 			Aliases: []string{"db"},
-			Usage:   "Set the genobase database path",
-			Value:   "zymatik.db",
+			Usage:   "Set the Genobase DB path",
+			Value:   "genobase.db",
 		},
 		&cli.BoolFlag{
 			Name:  "no-sync",
@@ -71,13 +72,13 @@ func main() {
 
 	app := &cli.App{
 		Name:   "importer",
-		Usage:  "Prepare a Genobase DB from public Human Genomics reference data",
+		Usage:  "Prepare a Genobase DB from public human genomics reference data",
 		Flags:  sharedFlags,
 		Before: init,
 		Commands: []*cli.Command{
 			{
-				Name:      "add-variants",
-				Usage:     "Add dbSNP variants to a Genobase database",
+				Name:      "variants",
+				Usage:     "Import dbSNP variants into a Genobase DB",
 				UsageText: "importer add-variants <dbsnp vcf path>",
 				Flags:     sharedFlags,
 				Before:    init,
@@ -89,7 +90,7 @@ func main() {
 					dbPath := c.String("database-path")
 					noSync := c.Bool("no-sync")
 
-					db, err := database.Open(c.Context, logger, dbPath, noSync)
+					db, err := genobase.Open(c.Context, logger, dbPath, noSync)
 					if err != nil {
 						return fmt.Errorf("could not open database: %w", err)
 					}
@@ -103,9 +104,9 @@ func main() {
 				},
 			},
 			{
-				Name:      "add-alleles",
-				Usage:     "Add gnomAD allele frequencies to a Genobase database",
-				UsageText: "importer add-alleles <gnomad vcf path>",
+				Name:      "alleles",
+				Usage:     "Import gnomAD allele frequencies into a Genobase DB",
+				UsageText: "importer alleles <gnomad vcf path>",
 				Flags: append([]cli.Flag{
 					&cli.Float64Flag{
 						Name:    "minimum-frequency",
@@ -123,7 +124,7 @@ func main() {
 					dbPath := c.String("database-path")
 					noSync := c.Bool("no-sync")
 
-					db, err := database.Open(c.Context, logger, dbPath, noSync)
+					db, err := genobase.Open(c.Context, logger, dbPath, noSync)
 					if err != nil {
 						return fmt.Errorf("could not open database: %w", err)
 					}
@@ -138,8 +139,8 @@ func main() {
 				},
 			},
 			{
-				Name:      "add-chain-file",
-				Usage:     "Add a liftOver chain file to a Genobase database",
+				Name:      "chain-file",
+				Usage:     "Import a chain file into a Genobase DB",
 				UsageText: "importer add-chain-file [-f reference] <chain file path>",
 				Flags: append([]cli.Flag{
 					&cli.StringFlag{
@@ -158,18 +159,22 @@ func main() {
 					dbPath := c.String("database-path")
 					noSync := c.Bool("no-sync")
 
-					db, err := database.Open(c.Context, logger, dbPath, noSync)
+					db, err := genobase.Open(c.Context, logger, dbPath, noSync)
 					if err != nil {
 						return fmt.Errorf("could not open database: %w", err)
 					}
 					defer db.Close()
 
-					fromReference := c.String("from-reference")
+					from, err := names.Reference(c.String("from-reference"))
+					if err != nil {
+						return fmt.Errorf("invalid from reference: %w", err)
+					}
+
 					chainFilePath := c.Args().First()
 
-					logger.Info("Adding liftOver chain", "fromReference", fromReference, "path", chainFilePath)
+					logger.Info("Adding liftOver chain", "from", from, "path", chainFilePath)
 
-					return importer.LiftOverChain(c.Context, logger, db, fromReference, chainFilePath, showProgress)
+					return importer.LiftOverChain(c.Context, logger, db, from, chainFilePath, showProgress)
 				},
 			},
 		},
